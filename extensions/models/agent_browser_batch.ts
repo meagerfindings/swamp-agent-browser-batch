@@ -125,6 +125,64 @@ function substituteCommands(
 }
 
 /**
+ * Reverse of substituteSecrets: replace any literal secret value found in
+ * `arg` with its `{{secret:NAME}}` placeholder. Used to scrub credentials
+ * out of agent-browser's echoed-back command arrays before persisting the
+ * batchRun artifact.
+ *
+ * @param arg - String potentially containing a secret value.
+ * @param secrets - Map of secret name → value.
+ * @returns The arg with literal secret values rewritten back to placeholders.
+ */
+function redactSecrets(
+  arg: string,
+  secrets: Record<string, string>,
+): string {
+  let result = arg;
+  for (const [name, value] of Object.entries(secrets)) {
+    if (value.length === 0) continue;
+    while (result.includes(value)) {
+      result = result.replace(value, `{{secret:${name}}}`);
+    }
+  }
+  return result;
+}
+
+/**
+ * Walk a parsed batch step and scrub any secret values out of the echoed
+ * `command` array (and any string fields nested inside `result`) by
+ * replacing them with the original `{{secret:NAME}}` placeholder.
+ *
+ * @param step - One step result from agent-browser.
+ * @param secrets - Map of secret name → value.
+ * @returns A fresh step with secrets redacted from `command` and `result`.
+ */
+function redactStep(
+  step: z.infer<typeof BatchStepSchema>,
+  secrets: Record<string, string>,
+): z.infer<typeof BatchStepSchema> {
+  const redactValue = (v: unknown): unknown => {
+    if (typeof v === "string") return redactSecrets(v, secrets);
+    if (Array.isArray(v)) return v.map(redactValue);
+    if (v && typeof v === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [k, vv] of Object.entries(v as Record<string, unknown>)) {
+        out[k] = redactValue(vv);
+      }
+      return out;
+    }
+    return v;
+  };
+
+  return {
+    ...step,
+    command: step.command.map((a) => redactSecrets(a, secrets)),
+    result: redactValue(step.result) as typeof step.result,
+    error: step.error === null ? null : redactSecrets(step.error, secrets),
+  };
+}
+
+/**
  * Outcome of one `runBatch` dispatch — the typed per-step results plus the
  * subprocess exit envelope.
  */
@@ -199,7 +257,7 @@ async function dispatchBatch(
 /** Swamp model for invoking agent-browser as a single-subprocess batch. */
 export const model = {
   type: "@mgreten/agent-browser-batch",
-  version: "2026.05.21.1",
+  version: "2026.05.21.2",
   globalArguments: GlobalArgsSchema,
   resources: {
     batchRun: {
@@ -278,9 +336,16 @@ export const model = {
           timeoutMs,
         );
 
+        // agent-browser echoes the substituted commands back in each step's
+        // `command` field, and may also embed credential strings in `result`
+        // or `error` (e.g. echoed form values). Scrub them back to
+        // `{{secret:NAME}}` placeholders before the artifact is persisted.
+        const redactedSteps = outcome.steps.map((s) => redactStep(s, secrets));
+        const redactedStderr = redactSecrets(outcome.stderr, secrets);
+
         const finishedMs = Date.now();
-        const okCount = outcome.steps.filter((s) => s.success).length;
-        const failCount = outcome.steps.length - okCount;
+        const okCount = redactedSteps.filter((s) => s.success).length;
+        const failCount = redactedSteps.length - okCount;
         const allSucceeded = outcome.exitCode === 0 &&
           outcome.parseError === null && failCount === 0;
 
@@ -302,10 +367,10 @@ export const model = {
           finishedAt: new Date().toISOString(),
           durationMs: finishedMs - startedMs,
           exitCode: outcome.exitCode,
-          stderr: outcome.stderr.slice(0, 4000),
+          stderr: redactedStderr.slice(0, 4000),
           bail,
           commands: args.commands,
-          steps: outcome.steps,
+          steps: redactedSteps,
           okCount,
           failCount,
           status: allSucceeded ? "pass" : "fail",
