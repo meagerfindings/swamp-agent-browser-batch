@@ -1,0 +1,18 @@
+manifestVersion: 1
+name: "@mgreten/agent-browser-batch"
+version: "2026.05.21.1"
+description: >
+  Dispatch agent-browser commands as a single subprocess via `agent-browser
+  batch --json` so cookies and Chromium state persist across every step.
+  Supports {{secret:NAME}} placeholders for credentials.
+
+repository: https://github.com/meagerfindings/swamp-agent-browser-batch
+
+models:
+  - agent_browser_batch.ts
+
+additionalFiles:
+  - README.md
+  - LICENSE.txt
+
+platforms: []
