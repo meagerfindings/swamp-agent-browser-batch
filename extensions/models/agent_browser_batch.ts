@@ -55,7 +55,7 @@ const BatchStepSchema: z.ZodObject<{
   success: z.boolean(),
   error: z.string().nullable(),
   result: z.unknown().nullable(),
-}).passthrough();
+});
 
 /** Resource artifact recording a full batch invocation. */
 const BatchRunSchema = z.object({
@@ -70,7 +70,7 @@ const BatchRunSchema = z.object({
   okCount: z.number(),
   failCount: z.number(),
   status: z.enum(["pass", "fail"]),
-}).passthrough();
+});
 
 type MethodContext = {
   globalArgs: z.infer<typeof GlobalArgsSchema>;
@@ -257,7 +257,7 @@ async function dispatchBatch(
 /** Swamp model for invoking agent-browser as a single-subprocess batch. */
 export const model = {
   type: "@mgreten/agent-browser-batch",
-  version: "2026.06.27.1",
+  version: "2026.06.27.2",
   globalArguments: GlobalArgsSchema,
   resources: {
     batchRun: {
