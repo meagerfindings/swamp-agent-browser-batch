@@ -26,9 +26,9 @@
 import { z } from "npm:zod@4";
 
 /** Schema for shared globalArgs. */
-const GlobalArgsSchema: z.ZodObject<{
-  binaryPath: z.ZodString;
-  defaultTimeoutMs: z.ZodNumber;
+export const GlobalArgsSchema: z.ZodObject<{
+  binaryPath: z.ZodDefault<z.ZodString>;
+  defaultTimeoutMs: z.ZodDefault<z.ZodNumber>;
 }> = z.object({
   binaryPath: z
     .string()
@@ -45,7 +45,7 @@ const GlobalArgsSchema: z.ZodObject<{
 });
 
 /** Outcome of one logical agent-browser sub-command inside the batch. */
-const BatchStepSchema: z.ZodObject<{
+export const BatchStepSchema: z.ZodObject<{
   command: z.ZodArray<z.ZodString>;
   success: z.ZodBoolean;
   error: z.ZodNullable<z.ZodString>;
@@ -58,7 +58,7 @@ const BatchStepSchema: z.ZodObject<{
 });
 
 /** Resource artifact recording a full batch invocation. */
-const BatchRunSchema = z.object({
+export const BatchRunSchema = z.object({
   startedAt: z.string(),
   finishedAt: z.string(),
   durationMs: z.number(),
@@ -98,7 +98,7 @@ const SECRET_PLACEHOLDER: RegExp = /\{\{secret:([A-Za-z0-9_-]+)\}\}/g;
  * @param secrets - Map of secret name → value (sensitive).
  * @returns The arg with placeholders substituted.
  */
-function substituteSecrets(
+export function substituteSecrets(
   arg: string,
   secrets: Record<string, string>,
 ): string {
@@ -115,7 +115,7 @@ function substituteSecrets(
  * @param secrets - Map of secret name → value.
  * @returns A fresh list with substitutions applied.
  */
-function substituteCommands(
+export function substituteCommands(
   commands: string[][],
   secrets: Record<string, string>,
 ): string[][] {
@@ -134,7 +134,7 @@ function substituteCommands(
  * @param secrets - Map of secret name → value.
  * @returns The arg with literal secret values rewritten back to placeholders.
  */
-function redactSecrets(
+export function redactSecrets(
   arg: string,
   secrets: Record<string, string>,
 ): string {
@@ -157,7 +157,7 @@ function redactSecrets(
  * @param secrets - Map of secret name → value.
  * @returns A fresh step with secrets redacted from `command` and `result`.
  */
-function redactStep(
+export function redactStep(
   step: z.infer<typeof BatchStepSchema>,
   secrets: Record<string, string>,
 ): z.infer<typeof BatchStepSchema> {
