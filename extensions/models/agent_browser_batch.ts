@@ -257,7 +257,7 @@ async function dispatchBatch(
 /** Swamp model for invoking agent-browser as a single-subprocess batch. */
 export const model = {
   type: "@mgreten/agent-browser-batch",
-  version: "2026.06.27.2",
+  version: "2026.07.16.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     batchRun: {
