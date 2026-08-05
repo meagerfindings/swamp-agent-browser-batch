@@ -2,6 +2,8 @@ import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import {
   BatchRunSchema,
   BatchStepSchema,
+  closeOrphanedSession,
+  dispatchBatch,
   GlobalArgsSchema,
   redactSecrets,
   redactStep,
@@ -88,4 +90,57 @@ Deno.test("redactStep: preserves nulls and does not mutate the source step", () 
   const step = { command: ["get", "url"], success: true, error: null, result: null };
   assertEquals(redactStep(step, { key: "secret" }), step);
   assertEquals(step, { command: ["get", "url"], success: true, error: null, result: null });
+});
+
+Deno.test("closeOrphanedSession: resolves without throwing when the binary does not exist", async () => {
+  await closeOrphanedSession("/nonexistent/agent-browser-binary");
+});
+
+/**
+ * Writes a fake `agent-browser` executable: `batch` hangs forever (simulating
+ * a wedged daemon), `close` writes a sentinel file and exits immediately. Lets
+ * dispatchBatch's timeout->closeOrphanedSession path be exercised without a
+ * real agent-browser install or a genuinely hung process.
+ */
+async function writeFakeBinary(sentinelPath: string): Promise<string> {
+  const scriptPath = await Deno.makeTempFile({ suffix: ".sh" });
+  await Deno.writeTextFile(
+    scriptPath,
+    `#!/bin/sh
+if [ "$1" = "close" ]; then
+  touch "${sentinelPath}"
+  exit 0
+fi
+# "batch" (or anything else): hang until killed.
+cat >/dev/null
+sleep 60
+`,
+  );
+  await Deno.chmod(scriptPath, 0o755);
+  return scriptPath;
+}
+
+Deno.test("dispatchBatch: on timeout, kills the process and closes the orphaned session", async () => {
+  const sentinelPath = await Deno.makeTempFile();
+  await Deno.remove(sentinelPath);
+  const binaryPath = await writeFakeBinary(sentinelPath);
+
+  try {
+    const outcome = await dispatchBatch(binaryPath, [["open", "https://example.com"]], false, 200);
+
+    assertEquals(outcome.exitCode !== 0, true);
+
+    let sentinelWritten = false;
+    for (let i = 0; i < 20; i++) {
+      if (await Deno.stat(sentinelPath).then(() => true, () => false)) {
+        sentinelWritten = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assertEquals(sentinelWritten, true);
+  } finally {
+    await Deno.remove(binaryPath).catch(() => {});
+    await Deno.remove(sentinelPath).catch(() => {});
+  }
 });

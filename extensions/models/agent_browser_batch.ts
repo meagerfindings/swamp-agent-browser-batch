@@ -194,6 +194,40 @@ type BatchOutcome = {
 };
 
 /**
+ * Best-effort daemon teardown after a timed-out batch. `agent-browser batch`
+ * hands off to a background daemon that owns the actual Chromium process
+ * (see the module-level comment on why one subprocess = one daemon). Sending
+ * SIGKILL to the `batch` CLI process only kills the thin client — the daemon
+ * and its Chromium are not in that process's tree and survive the kill,
+ * leaving an orphaned Chromium that a later invocation piles on top of
+ * instead of reusing. `agent-browser close` asks the daemon to tear down the
+ * session's browser itself, which is the only reliable way to reclaim it.
+ *
+ * @param binaryPath - Path/name of the agent-browser executable.
+ */
+export async function closeOrphanedSession(binaryPath: string): Promise<void> {
+  try {
+    const closeProc = new Deno.Command(binaryPath, {
+      args: ["close"],
+      stdin: "null",
+      stdout: "null",
+      stderr: "null",
+    }).spawn();
+    const closeTimeout = setTimeout(() => {
+      try {
+        closeProc.kill("SIGKILL");
+      } catch (_e) {
+        // Already exited.
+      }
+    }, 5_000);
+    await closeProc.output();
+    clearTimeout(closeTimeout);
+  } catch (_e) {
+    // Best-effort — nothing to reclaim if `close` itself fails to run.
+  }
+}
+
+/**
  * Spawn `agent-browser batch --json` (optionally `--bail`) in a single
  * subprocess and pipe the JSON command list to its stdin. Decode stdout
  * as a JSON array of step results.
@@ -204,7 +238,7 @@ type BatchOutcome = {
  * @param timeoutMs - Soft timeout for the whole batch.
  * @returns Per-step results + the exit envelope.
  */
-async function dispatchBatch(
+export async function dispatchBatch(
   binaryPath: string,
   commands: string[][],
   bail: boolean,
@@ -224,7 +258,9 @@ async function dispatchBatch(
   await writer.write(new TextEncoder().encode(JSON.stringify(commands)));
   await writer.close();
 
+  let timedOut = false;
   const timeout = setTimeout(() => {
+    timedOut = true;
     try {
       proc.kill("SIGKILL");
     } catch (_e) {
@@ -234,6 +270,10 @@ async function dispatchBatch(
 
   const output = await proc.output();
   clearTimeout(timeout);
+
+  if (timedOut) {
+    await closeOrphanedSession(binaryPath);
+  }
 
   const stdout = new TextDecoder().decode(output.stdout);
   const stderr = new TextDecoder().decode(output.stderr);
@@ -257,7 +297,7 @@ async function dispatchBatch(
 /** Swamp model for invoking agent-browser as a single-subprocess batch. */
 export const model = {
   type: "@mgreten/agent-browser-batch",
-  version: "2026.07.16.1",
+  version: "2026.08.05.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     batchRun: {
