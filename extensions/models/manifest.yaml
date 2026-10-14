@@ -1,6 +1,7 @@
 manifestVersion: 1
 name: "@mgreten/agent-browser-batch"
-version: "2026.08.05.1"
+version: "2026.10.14.1"
+license: MIT
 description: >
   Dispatch agent-browser commands as a single subprocess via `agent-browser
   batch --json` so cookies and Chromium state persist across every step.
